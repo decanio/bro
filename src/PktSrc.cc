@@ -71,7 +71,8 @@ int PktSrc::ExtractNextPacket()
 	// very first packet which we need to set up times).
 	if ( net_is_processing_suspended() && first_timestamp )
 		{
-		idle = true;
+		if ( selectable_fd >= 0 )
+			idle = true;
 		return 0;
 		}
 
@@ -86,7 +87,8 @@ int PktSrc::ExtractNextPacket()
 	if ( ! first_timestamp )
 		first_timestamp = next_timestamp;
 
-	idle = (data == 0);
+	if ( selectable_fd >= 0 )
+		idle = (data == 0);
 
 	if ( data )
 		++stats.received;
