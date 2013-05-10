@@ -41,6 +41,9 @@
 /* line editing & history powers */
 #cmakedefine HAVE_READLINE
 
+/* Define if you have the netmap drivers installed */
+#cmakedefine HAVE_NETMAP
+
 /* Define if you have the `sigaction' function, but not `sigset'. */
 #cmakedefine HAVE_SIGACTION
 

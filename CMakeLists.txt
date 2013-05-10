@@ -80,6 +80,23 @@ include_directories(BEFORE
 
 # Optional Dependencies
 
+INCLUDE (CheckIncludeFiles)
+#set(HAVE_NETMAP false)
+#CHECK_INCLUDE_FILES(net/netmap.h, NETMAP_FOUND)
+#if (NETMAP_FOUND)
+#    set(HAVE_NETMAP true)
+#    set(CMAKE_REQUIRED_INCLUDES ${NETMAP_INCLUDE})
+#    include_directories(BEFORE ${NETMAP_INCLUDE})
+#endif ()
+set(HAVE_NETMAP true)
+#set(NETMAP_INCLUDE /home/decanio/work/netmap/sys)
+set(NETMAP_INCLUDE_DIR ${NETMAP_ROOT_DIR})
+set(CMAKE_REQUIRED_INCLUDES ${NETMAP_INCLUDE_DIR})
+include_directories(BEFORE ${NETMAP_INCLUDE_DIR})
+CHECK_INCLUDE_FILES(net/netmap.h, HAVE_NETMAPX)
+message("\nNETMAP_ROOT_DIR:     ${NETMAP_ROOT_DIR}\n")
+message("\nNETMAP_INCLUDE:     ${NETMAP_INCLUDE_DIR}\n")
+
 set(USE_GEOIP false)
 find_package(LibGeoIP)
 if (LIBGEOIP_FOUND)

@@ -15,6 +15,13 @@ extern "C" {
 #include <pcap.h>
 }
 
+#ifdef HAVE_NETMAP
+extern "C" {
+#include <net/if.h>
+#include <net/netmap.h>
+}
+#endif
+
 declare(PDict,BPF_Program);
 
 // Whether a PktSrc object is used by the normal filter structure or the
@@ -116,9 +123,18 @@ public:
 	void ConsumePacket()	{ data = 0; }
 
 	int IsLive() const		{ return interface != 0; }
+#ifdef HAVE_NETMAP
+	int IsNetmap() const		{ return fd > 0; }
+#endif
 
 	pcap_t* PcapHandle() const	{ return pd; }
+#ifndef HAVE_NETMAP
 	int LinkType() const		{ return pcap_datalink(pd); }
+#else
+	int LinkType() const		{ return ((fd < 0) ?
+						pcap_datalink(pd) :
+						DLT_EN10MB); }
+#endif
 
 	const char* ReadFile() const	{ return readfile; }
 	const char* Interface() const	{ return interface; }
@@ -191,6 +207,15 @@ protected:
 	int selectable_fd;
 	uint32 netmask;
 	char errbuf[BRO_PCAP_ERRBUF_SIZE];
+
+#ifdef HAVE_NETMAP
+	int fd;
+	void *mem;
+	unsigned memsize;
+	unsigned current, begin, end;   // first...last+1 rings to check
+	struct netmap_if *nifp;
+	struct netmap_ring *tx, *rx; // shortcuts
+#endif
 
 	Stats stats;
 

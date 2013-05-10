@@ -17,6 +17,17 @@
 #include <pcap-int.h>
 #endif
 
+#ifdef HAVE_NETMAP
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <poll.h>
+#include <net/netmap.h>
+#include <net/netmap_user.h>
+
+#define POLL_TIMEOUT 100
+
+#endif
+
 PktSrc::PktSrc()
 	{
 	interface = readfile = 0;
@@ -71,10 +82,55 @@ int PktSrc::ExtractNextPacket()
 	// very first packet which we need to set up times).
 	if ( net_is_processing_suspended() && first_timestamp )
 		{
-		idle = true;
+		if ( ! IsNetmap() )
+			idle = true;
 		return 0;
 		}
 
+#ifdef HAVE_NETMAP
+	if ( IsNetmap() )
+		{
+		struct pollfd fds;
+		int r;
+		data = last_data = 0;
+		fds.fd = fd;
+		fds.events = POLLIN;
+		r = poll(&fds, 1, POLL_TIMEOUT);
+		//if (r > 0)
+		if (1)
+			{
+		struct netmap_ring *ring = NETMAP_RXRING(nifp, current);
+//printf("PktSrc::ExtractNextPacket IsNetmap polling current: %d avail: %d\n", current, ring->avail);
+		if (ring->avail > 0)
+			{
+			printf("ring[%d]->avail: %d\n", current, ring->avail);
+			unsigned cur = ring->cur;
+			struct netmap_slot *slot = &ring->slot[cur];
+			data = last_data = (const u_char *)NETMAP_BUF(ring, slot->buf_idx);
+			hdr.caplen = hdr.len = slot->len;
+			gettimeofday(&hdr.ts, NULL); // optimize this somehow
+			/* debug packet dumper */
+			printf("Got a packet %d %d\n", hdr.caplen, hdr.len);
+			unsigned i;
+			for (i = 0; i < hdr.len; i++)
+				{
+				printf("%02x ", data[i]);
+				if (((i + 1) % 16) == 0) printf("\n");
+				}
+			printf("\n");
+			/* */
+			ring->cur = NETMAP_RING_NEXT(ring, cur);
+			}
+		else
+			{
+			++current;
+			if (current > end)
+				current = begin;
+			}
+			}
+		}
+	else
+#endif
 	data = last_data = pcap_next(pd, &hdr);
 
 	if ( data )
@@ -86,7 +142,8 @@ int PktSrc::ExtractNextPacket()
 	if ( ! first_timestamp )
 		first_timestamp = next_timestamp;
 
-	idle = (data == 0);
+	if ( ! IsNetmap() )
+		idle = (data == 0);
 
 	if ( data )
 		++stats.received;
@@ -299,6 +356,12 @@ bool PktSrc::GetCurrentPacket(const struct pcap_pkthdr** arg_hdr,
 
 int PktSrc::PrecompileFilter(int index, const char* filter)
 	{
+#ifdef HAVE_NETMAP
+	if ( IsNetmap() )
+		{
+		return 1;
+		}
+#endif
 	// Compile filter.
 	BPF_Program* code = new BPF_Program();
 
@@ -371,6 +434,14 @@ void PktSrc::SetHdrSize()
 
 void PktSrc::Close()
 	{
+#ifdef HAVE_NETMAP
+	if ( IsNetmap() )
+		{
+		close(fd);
+		closed = true;
+		reporter->Info("closed Netmap queue");
+		}
+#endif
 	if ( pd )
 		{
 		pcap_close(pd);
@@ -406,6 +477,14 @@ void PktSrc::Statistics(Stats* s)
 	if ( reading_traces )
 		s->received = s->dropped = s->link = 0;
 
+#ifdef HAVE_NETMAP
+	else if ( IsNetmap() )
+		{
+		// TODO finish
+		s->received = stats.received;
+		s->dropped = s->link = 0;
+		}
+#endif
 	else
 		{
 		struct pcap_stat pstat;
@@ -450,6 +529,83 @@ PktInterfaceSrc::PktInterfaceSrc(const char* arg_interface, const char* filter,
 
 	// Determine network and netmask.
 	uint32 net;
+#ifdef HAVE_NETMAP
+//printf("attempting to open /dev/netmap\n");
+	// Attempt to open up interface as a netmap interface
+	fd = open("/dev/netmap", O_RDWR);
+	if ( fd > 0 )
+		{
+		struct nmreq req;
+		int err;
+		int devqueues;
+		const char *name = NULL;
+		int worker = 0;
+
+//printf("/dev/netmap opened\n");
+		memset(&req, 0, sizeof(req));
+		req.nr_version = NETMAP_API;
+		strncpy(req.nr_name, interface, sizeof(req.nr_name));
+		req.nr_ringid = 0;
+		err = ioctl(fd, NIOCGINFO, &req);
+		if (err)
+			{
+			printf("Could not get info\n");
+			goto error;
+			}
+		devqueues = req.nr_rx_rings;
+		memsize = req.nr_memsize;
+		if ( ( name = getenv("NETMAP_NAME") ) != NULL )
+			{
+			const char *p = strrchr(name, '-');
+			if (*p != '\0')
+				{
+				worker = atoi(p+1);
+				}
+			}	
+		//req.nr_ringid = 0;
+		req.nr_ringid = ( worker != 0) ?
+					(( worker - 1) | NETMAP_HW_RING) :
+					0;
+		req.nr_ringid |= NETMAP_NO_TX_POLL;
+		err = ioctl(fd, NIOCREGIF, &req);
+		if (err)
+			{
+			printf("Could not register\n");
+			goto error;
+			}
+
+		mem = mmap(0, memsize, PROT_WRITE|PROT_READ, MAP_SHARED, fd, 0);
+		if (mem == MAP_FAILED)
+			{
+			printf("mmap failed\n");
+			mem = NULL;
+			goto error;
+			}
+		nifp = NETMAP_IF(mem, req.nr_offset);
+		if ( worker != 0 )
+			{
+			begin = (worker - 1) & NETMAP_RING_MASK;
+			end = begin + 1;
+			tx = NETMAP_TXRING(nifp, begin);
+			rx = NETMAP_RXRING(nifp, begin);
+			}
+		else
+			{
+			begin = 0;
+			end = devqueues;
+			tx = NETMAP_TXRING(nifp, 0);
+			rx = NETMAP_RXRING(nifp, 0);
+			}
+		current = begin;
+		goto done;
+		}
+error:
+	if (fd > 0)
+		{
+		close(fd);
+		fd = -1;
+		}
+#endif
 	if ( pcap_lookupnet(interface, &net, &netmask, tmp_errbuf) < 0 )
 		{
 		// ### The lookup can fail if no address is assigned to
@@ -502,6 +658,9 @@ PktInterfaceSrc::PktInterfaceSrc(const char* arg_interface, const char* filter,
 			// Couldn't get header size.
 			return;
 
+#ifdef HAVE_NETMAP
+done:
+#endif
 		reporter->Info("listening on %s, capture length %d bytes\n", interface, snaplen);
 		}
 	else

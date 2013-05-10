@@ -55,7 +55,11 @@ protected:
 
 class IOSourceRegistry {
 public:
+#ifdef HAVE_NETMAP
+	IOSourceRegistry()	{ netmap_iosrc=0; call_count = 0; dont_counts = 0; }
+#else
 	IOSourceRegistry()	{ call_count = 0; dont_counts = 0; }
+#endif
 	~IOSourceRegistry();
 
 	// If dont_count is true, this source does not contribute to the
@@ -63,7 +67,9 @@ public:
 	// if all sources but the non-counting ones have gone dry,
 	// processing will shut down.
 	void Register(IOSource* src, bool dont_count = false);
-
+#ifdef HAVE_NETMAP
+	void RegisterNetmap(IOSource* src);
+#endif
 	// This may block for some time.
 	IOSource* FindSoonest(double* ts);
 
@@ -96,6 +102,9 @@ protected:
 
 	typedef list<Source*> SourceList;
 	SourceList sources;
+#ifdef HAVE_NETMAP
+	IOSource *netmap_iosrc;
+#endif
 };
 
 extern IOSourceRegistry io_sources;
