@@ -102,6 +102,11 @@ int PktSrc::ExtractNextPacket()
 			{
 #endif
 		struct netmap_ring *ring = NETMAP_RXRING(nifp, current);
+		if ( consumed[current] )
+			{
+			ring->avail -= consumed[current];
+			consumed[current] = 0;
+			}
 //printf("PktSrc::ExtractNextPacket IsNetmap polling current: %d avail: %d\n", current, ring->avail);
 		if (ring->avail > 0)
 			{
@@ -123,6 +128,7 @@ int PktSrc::ExtractNextPacket()
 				}
 			printf("\n");
 			*/
+			consumed[current]++;
 			ring->cur = NETMAP_RING_NEXT(ring, cur);
 			}
 		else
@@ -244,6 +250,7 @@ void PktSrc::Process()
 	if ( ! data && ! ExtractNextPacket() )
 		return;
 
+//printf("processing packet\n");
 	current_timestamp = next_timestamp;
 
 	int pkt_hdr_size = hdr_size;
@@ -255,6 +262,7 @@ void PktSrc::Process()
 
 	int protocol = 0;
 
+//printf("datalink: %x\n", datalink);
 	switch ( datalink ) {
 	case DLT_NULL:
 		{
@@ -286,6 +294,7 @@ void PktSrc::Process()
 		// Get protocol being carried from the ethernet frame.
 		protocol = (data[12] << 8) + data[13];
 
+//printf("protocol: %x\n", protocol);
 		// MPLS carried over the ethernet frame.
 		if ( protocol == 0x8847 )
 			have_mpls = true;
@@ -607,6 +616,8 @@ PktInterfaceSrc::PktInterfaceSrc(const char* arg_interface, const char* filter,
 			rx = NETMAP_RXRING(nifp, 0);
 			}
 		current = begin;
+		datalink = DLT_EN10MB;
+		//selectable_fd = -1;
 		goto done;
 		}
 error:

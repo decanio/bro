@@ -213,6 +213,7 @@ protected:
 	void *mem;
 	unsigned memsize;
 	unsigned current, begin, end;   // first...last+1 rings to check
+	unsigned consumed[16];
 	struct netmap_if *nifp;
 	struct netmap_ring *tx, *rx; // shortcuts
 #endif
