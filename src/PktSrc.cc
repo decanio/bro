@@ -24,7 +24,7 @@
 #include <net/netmap.h>
 #include <net/netmap_user.h>
 
-#define POLL_TIMEOUT 100
+#define POLL_TIMEOUT 10
 
 #endif
 
@@ -93,23 +93,27 @@ int PktSrc::ExtractNextPacket()
 		struct pollfd fds;
 		int r;
 		data = last_data = 0;
+#if 0
 		fds.fd = fd;
 		fds.events = POLLIN;
 		r = poll(&fds, 1, POLL_TIMEOUT);
 		//if (r > 0)
 		if (1)
 			{
+#endif
 		struct netmap_ring *ring = NETMAP_RXRING(nifp, current);
 //printf("PktSrc::ExtractNextPacket IsNetmap polling current: %d avail: %d\n", current, ring->avail);
 		if (ring->avail > 0)
 			{
+			/*
 			printf("ring[%d]->avail: %d\n", current, ring->avail);
+			*/
 			unsigned cur = ring->cur;
 			struct netmap_slot *slot = &ring->slot[cur];
 			data = last_data = (const u_char *)NETMAP_BUF(ring, slot->buf_idx);
 			hdr.caplen = hdr.len = slot->len;
 			gettimeofday(&hdr.ts, NULL); // optimize this somehow
-			/* debug packet dumper */
+			/* debug packet dumper
 			printf("Got a packet %d %d\n", hdr.caplen, hdr.len);
 			unsigned i;
 			for (i = 0; i < hdr.len; i++)
@@ -118,16 +122,22 @@ int PktSrc::ExtractNextPacket()
 				if (((i + 1) % 16) == 0) printf("\n");
 				}
 			printf("\n");
-			/* */
+			*/
 			ring->cur = NETMAP_RING_NEXT(ring, cur);
 			}
 		else
 			{
-			++current;
-			if (current > end)
+			if ( ++current > end )
+				{
 				current = begin;
+				fds.fd = fd;
+				fds.events = POLLIN;
+				r = poll(&fds, 1, POLL_TIMEOUT);
+				}
 			}
+#if 0
 			}
+#endif
 		}
 	else
 #endif
