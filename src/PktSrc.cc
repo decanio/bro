@@ -235,7 +235,6 @@ void PktSrc::Process()
 	if ( ! data && ! ExtractNextPacket() )
 		return;
 
-//printf("processing packet\n");
 	current_timestamp = next_timestamp;
 
 	int pkt_hdr_size = hdr_size;
@@ -247,7 +246,6 @@ void PktSrc::Process()
 
 	int protocol = 0;
 
-//printf("datalink: %x\n", datalink);
 	switch ( datalink ) {
 	case DLT_NULL:
 		{
@@ -279,7 +277,6 @@ void PktSrc::Process()
 		// Get protocol being carried from the ethernet frame.
 		protocol = (data[12] << 8) + data[13];
 
-//printf("protocol: %x\n", protocol);
 		// MPLS carried over the ethernet frame.
 		if ( protocol == 0x8847 )
 			have_mpls = true;
@@ -534,7 +531,6 @@ PktInterfaceSrc::PktInterfaceSrc(const char* arg_interface, const char* filter,
 	// Determine network and netmask.
 	uint32 net;
 #ifdef HAVE_NETMAP
-//printf("attempting to open /dev/netmap\n");
 	// Attempt to open up interface as a netmap interface
 	fd = open("/dev/netmap", O_RDWR);
 	if ( fd > 0 )
@@ -545,7 +541,6 @@ PktInterfaceSrc::PktInterfaceSrc(const char* arg_interface, const char* filter,
 		const char *name = NULL;
 		int worker = 0;
 
-//printf("/dev/netmap opened\n");
 		memset(&req, 0, sizeof(req));
 		req.nr_version = NETMAP_API;
 		strncpy(req.nr_name, interface, sizeof(req.nr_name));
