@@ -93,31 +93,19 @@ int PktSrc::ExtractNextPacket()
 		struct pollfd fds;
 		int r;
 		data = last_data = 0;
-#if 0
-		fds.fd = fd;
-		fds.events = POLLIN;
-		r = poll(&fds, 1, POLL_TIMEOUT);
-		//if (r > 0)
-		if (1)
-			{
-#endif
 		struct netmap_ring *ring = NETMAP_RXRING(nifp, current);
 		if ( consumed[current] )
 			{
 			ring->avail -= consumed[current];
 			consumed[current] = 0;
 			}
-//printf("PktSrc::ExtractNextPacket IsNetmap polling current: %d avail: %d\n", current, ring->avail);
 		if (ring->avail > 0)
 			{
-			/*
-			printf("ring[%d]->avail: %d\n", current, ring->avail);
-			*/
 			unsigned cur = ring->cur;
 			struct netmap_slot *slot = &ring->slot[cur];
 			data = last_data = (const u_char *)NETMAP_BUF(ring, slot->buf_idx);
 			hdr.caplen = hdr.len = slot->len;
-			gettimeofday(&hdr.ts, NULL); // optimize this somehow
+			gettimeofday(&hdr.ts, NULL); // optimize this
 			/* debug packet dumper
 			printf("Got a packet %d %d\n", hdr.caplen, hdr.len);
 			unsigned i;
@@ -141,9 +129,6 @@ int PktSrc::ExtractNextPacket()
 				r = poll(&fds, 1, POLL_TIMEOUT);
 				}
 			}
-#if 0
-			}
-#endif
 		}
 	else
 #endif
